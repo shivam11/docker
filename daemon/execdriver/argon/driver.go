@@ -265,17 +265,17 @@ func (d *driver) Run(c *execdriver.Command, pipes *execdriver.Pipes, startCallba
 	defer errListen.Close()
 	go stdouterrAccept(errListen, stdDevices.StdErrPipe, pipes.Stderr)
 
-	// HACK HACK
-	//stdDevices.StdInPipe = ""
-	//stdDevices.StdErrPipe = ""
-	//stdDevices.StdOutPipe = ""
-
 	// Temporarily create a dummy container with the ID
 	configuration := `{` + "\n"
 	configuration += ` "SystemType" : "Container",` + "\n"
 	configuration += ` "Name" : "test2",` + "\n"
 	configuration += ` "RootDevicePath" : "C:\\Containers\\test",` + "\n"
 	configuration += ` "IsDummy" : true` + "\n"
+
+	if c.ProcessConfig.Tty == true {
+		configuration += ` "TTY" : true` + "\n"
+	}
+
 	configuration += `}` + "\n"
 	err = hcsshim.Create(c.ID, configuration)
 	if err != nil {

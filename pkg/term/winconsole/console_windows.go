@@ -242,6 +242,7 @@ func StdStreams() (stdIn io.ReadCloser, stdOut io.Writer, stdErr io.Writer) {
 		handler.screenBufferInfo = screenBufferInfo
 
 		// Set the window size
+// https://github.com/ahmetalpbalkan/docker/commit/0532dcf3dc1fa34fab5a9cdee6c4d87af66a6cdf
 		SetWindowSize(stdoutHandle, DEFAULT_WIDTH, DEFAULT_HEIGHT, DEFAULT_HEIGHT)
 		buffer = make([]CHAR_INFO, screenBufferInfo.MaximumWindowSize.X*screenBufferInfo.MaximumWindowSize.Y)
 
