@@ -14,6 +14,7 @@ import (
 	"text/template"
 	"time"
 
+log "github.com/Sirupsen/logrus"
 	"github.com/docker/docker/pkg/homedir"
 	flag "github.com/docker/docker/pkg/mflag"
 	"github.com/docker/docker/pkg/term"
@@ -139,10 +140,12 @@ func NewDockerCli(in io.ReadCloser, out, err io.Writer, keyFile string, proto, a
 	}
 	if in != nil {
 		inFd, isTerminalIn = term.GetFdInfo(in)
+		log.Debugln ("Client isTerminalin", isTerminalIn)
 	}
 
 	if out != nil {
 		outFd, isTerminalOut = term.GetFdInfo(out)
+		log.Debugln ("Client isTerminalout", isTerminalOut)
 	}
 
 	if err == nil {

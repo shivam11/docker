@@ -12,6 +12,8 @@ import (
 	"sync"
 	"syscall"
 	"unsafe"
+
+	log "github.com/Sirupsen/logrus"
 )
 
 const (
@@ -204,10 +206,12 @@ type WindowsTerminal struct {
 }
 
 func getStdHandle(stdhandle int) uintptr {
+	log.Debugln("console_windows:getStdHandle()")
 	handle, err := syscall.GetStdHandle(stdhandle)
 	if err != nil {
 		panic(fmt.Errorf("could not get standard io handle %d", stdhandle))
 	}
+	log.Debugln("console_windows:getStdHandle()", uintptr(handle))
 	return uintptr(handle)
 }
 
@@ -218,7 +222,10 @@ func StdStreams() (stdIn io.ReadCloser, stdOut io.Writer, stdErr io.Writer) {
 		inputEvents:         make([]INPUT_RECORD, MAX_INPUT_EVENTS),
 	}
 
+	log.Debugln("console_windows:StdStreams()", IsTerminal(os.Stdin.Fd()))
+
 	if IsTerminal(os.Stdin.Fd()) {
+		log.Debugln("console_windows:StdStreams() using terminalReader")
 		stdIn = &terminalReader{
 			wrappedReader: os.Stdin,
 			emulator:      handler,
@@ -226,11 +233,14 @@ func StdStreams() (stdIn io.ReadCloser, stdOut io.Writer, stdErr io.Writer) {
 			fd:            getStdHandle(syscall.STD_INPUT_HANDLE),
 		}
 	} else {
+		log.Debugln("console_windows:StdStreams() using stdin")
 		stdIn = os.Stdin
 	}
 
 	if IsTerminal(os.Stdout.Fd()) {
+		log.Debugln("console_windows:StdStreams stdout is terminal")
 		stdoutHandle := getStdHandle(syscall.STD_OUTPUT_HANDLE)
+		log.Debugln("console_windows:StdStreams() stdout handle", stdoutHandle)
 
 		// Save current screen buffer info
 		screenBufferInfo, err := GetConsoleScreenBufferInfo(stdoutHandle)
@@ -242,8 +252,8 @@ func StdStreams() (stdIn io.ReadCloser, stdOut io.Writer, stdErr io.Writer) {
 		handler.screenBufferInfo = screenBufferInfo
 
 		// Set the window size
-// https://github.com/ahmetalpbalkan/docker/commit/0532dcf3dc1fa34fab5a9cdee6c4d87af66a6cdf
-		SetWindowSize(stdoutHandle, DEFAULT_WIDTH, DEFAULT_HEIGHT, DEFAULT_HEIGHT)
+		// https://github.com/ahmetalpbalkan/docker/commit/0532dcf3dc1fa34fab5a9cdee6c4d87af66a6cdf
+		//SetWindowSize(stdoutHandle, DEFAULT_WIDTH, DEFAULT_HEIGHT, DEFAULT_HEIGHT)
 		buffer = make([]CHAR_INFO, screenBufferInfo.MaximumWindowSize.X*screenBufferInfo.MaximumWindowSize.Y)
 
 		stdOut = &terminalWriter{
@@ -289,12 +299,23 @@ func GetHandleInfo(in interface{}) (uintptr, bool) {
 
 func getError(r1, r2 uintptr, lastErr error) error {
 	// If the function fails, the return value is zero.
+	log.Debugln("1 getError: ", r1, r2, lastErr)
 	if r1 == 0 {
 		if lastErr != nil {
+			if lastErr.Error() == "The operation completed successfully." {
+				log.Debugln("2 OK as completed successfully")
+				return nil
+			}
+			log.Debugln("3getError() lastErr", lastErr)
 			return lastErr
 		}
+		log.Debugln("4getError syscall.EINVAL", r1, r2)
 		return syscall.EINVAL
 	}
+	if r2 != 0 {
+		log.Debugln("5getError r2=", r2)
+	}
+	log.Debugln("6getError - all OK")
 	return nil
 }
 
@@ -303,18 +324,21 @@ func getError(r1, r2 uintptr, lastErr error) error {
 func GetConsoleMode(handle uintptr) (uint32, error) {
 	var mode uint32
 	err := syscall.GetConsoleMode(syscall.Handle(handle), &mode)
+	log.Debugln("console_windows:GetConsoleMode", mode, err)
 	return mode, err
 }
 
 // SetConsoleMode sets the console mode for given file descriptor
 // http://msdn.microsoft.com/en-us/library/windows/desktop/ms686033(v=vs.85).aspx
 func SetConsoleMode(handle uintptr, mode uint32) error {
+	log.Debugln("console_windows:SetConsoleMode()")
 	return getError(setConsoleModeProc.Call(handle, uintptr(mode), 0))
 }
 
 // SetCursorVisible sets the cursor visbility
 // http://msdn.microsoft.com/en-us/library/windows/desktop/ms686019(v=vs.85).aspx
 func SetCursorVisible(handle uintptr, isVisible BOOL) (bool, error) {
+	log.Debugln("console_windows:SetCursorVisible")
 	var cursorInfo CONSOLE_CURSOR_INFO
 	if err := getError(getConsoleCursorInfoProc.Call(handle, uintptr(unsafe.Pointer(&cursorInfo)), 0)); err != nil {
 		return false, err
@@ -328,6 +352,7 @@ func SetCursorVisible(handle uintptr, isVisible BOOL) (bool, error) {
 
 // SetWindowSize sets the size of the console window.
 func SetWindowSize(handle uintptr, width, height, max SHORT) (bool, error) {
+	log.Debugln("console_windows:SetWindowsSize")
 	window := SMALL_RECT{Left: 0, Top: 0, Right: width - 1, Bottom: height - 1}
 	coord := COORD{X: width - 1, Y: max}
 	if err := getError(setConsoleWindowInfoProc.Call(handle, uintptr(1), uintptr(unsafe.Pointer(&window)))); err != nil {
@@ -342,6 +367,7 @@ func SetWindowSize(handle uintptr, width, height, max SHORT) (bool, error) {
 // GetConsoleScreenBufferInfo retrieves information about the specified console screen buffer.
 // http://msdn.microsoft.com/en-us/library/windows/desktop/ms683171(v=vs.85).aspx
 func GetConsoleScreenBufferInfo(handle uintptr) (*CONSOLE_SCREEN_BUFFER_INFO, error) {
+	log.Debugln("console_windows:GetConsoleScreenBufferInfo")
 	var info CONSOLE_SCREEN_BUFFER_INFO
 	if err := getError(getConsoleScreenBufferInfoProc.Call(handle, uintptr(unsafe.Pointer(&info)), 0)); err != nil {
 		return nil, err
@@ -353,10 +379,12 @@ func GetConsoleScreenBufferInfo(handle uintptr) (*CONSOLE_SCREEN_BUFFER_INFO, er
 // console screen buffer by the WriteFile or WriteConsole function,
 // http://msdn.microsoft.com/en-us/library/windows/desktop/ms686047(v=vs.85).aspx
 func setConsoleTextAttribute(handle uintptr, attribute WORD) error {
+	log.Debugln("console_windows:setConsoleTextAttribute()")
 	return getError(setConsoleTextAttributeProc.Call(handle, uintptr(attribute), 0))
 }
 
 func writeConsoleOutput(handle uintptr, buffer []CHAR_INFO, bufferSize COORD, bufferCoord COORD, writeRegion *SMALL_RECT) (bool, error) {
+	log.Debugln("console_windows:WriteConsoleOutput")
 	if err := getError(writeConsoleOutputProc.Call(handle, uintptr(unsafe.Pointer(&buffer[0])), marshal(bufferSize), marshal(bufferCoord), uintptr(unsafe.Pointer(writeRegion)))); err != nil {
 		return false, err
 	}
@@ -365,6 +393,7 @@ func writeConsoleOutput(handle uintptr, buffer []CHAR_INFO, bufferSize COORD, bu
 
 // http://msdn.microsoft.com/en-us/library/windows/desktop/ms682663(v=vs.85).aspx
 func fillConsoleOutputCharacter(handle uintptr, fillChar byte, length uint32, writeCord COORD) (bool, error) {
+	log.Debugln("console_windows:fillConsoleOutputCharacter")
 	out := int64(0)
 	if err := getError(fillConsoleOutputCharacterProc.Call(handle, uintptr(fillChar), uintptr(length), marshal(writeCord), uintptr(unsafe.Pointer(&out)))); err != nil {
 		return false, err
@@ -374,6 +403,7 @@ func fillConsoleOutputCharacter(handle uintptr, fillChar byte, length uint32, wr
 
 // Gets the number of space characters to write for "clearing" the section of terminal
 func getNumberOfChars(fromCoord COORD, toCoord COORD, screenSize COORD) uint32 {
+
 	// must be valid cursor position
 	if fromCoord.X < 0 || fromCoord.Y < 0 || toCoord.X < 0 || toCoord.Y < 0 {
 		return 0
@@ -406,6 +436,7 @@ func getNumberOfChars(fromCoord COORD, toCoord COORD, screenSize COORD) uint32 {
 var buffer []CHAR_INFO
 
 func clearDisplayRect(handle uintptr, fillChar rune, attributes WORD, fromCoord COORD, toCoord COORD, windowSize COORD) (uint32, error) {
+	log.Debugln("console_windows:ClearDisplayRect")
 	var writeRegion SMALL_RECT
 	writeRegion.Top = fromCoord.Y
 	writeRegion.Left = fromCoord.X
@@ -435,6 +466,7 @@ func clearDisplayRect(handle uintptr, fillChar rune, attributes WORD, fromCoord 
 }
 
 func clearDisplayRange(handle uintptr, fillChar rune, attributes WORD, fromCoord COORD, toCoord COORD, windowSize COORD) (uint32, error) {
+	log.Debugln("console_windows:ClearDisplayRange")
 	nw := uint32(0)
 	// start and end on same line
 	if fromCoord.Y == toCoord.Y {
@@ -473,6 +505,7 @@ func clearDisplayRange(handle uintptr, fillChar rune, attributes WORD, fromCoord
 // Note The X and Y are zero based
 // If relative is true then the new position is relative to current one
 func setConsoleCursorPosition(handle uintptr, isRelative bool, column int16, line int16) error {
+	log.Debugln("console_windows:setConsoleCursorPosition")
 	screenBufferInfo, err := GetConsoleScreenBufferInfo(handle)
 	if err != nil {
 		return err
@@ -490,6 +523,7 @@ func setConsoleCursorPosition(handle uintptr, isRelative bool, column int16, lin
 
 // http://msdn.microsoft.com/en-us/library/windows/desktop/ms683207(v=vs.85).aspx
 func getNumberOfConsoleInputEvents(handle uintptr) (uint16, error) {
+	log.Debugln("console_windows:getNumberofConsoleInputEvents")
 	var n WORD
 	if err := getError(getNumberOfConsoleInputEventsProc.Call(handle, uintptr(unsafe.Pointer(&n)))); err != nil {
 		return 0, err
@@ -499,10 +533,18 @@ func getNumberOfConsoleInputEvents(handle uintptr) (uint16, error) {
 
 //http://msdn.microsoft.com/en-us/library/windows/desktop/ms684961(v=vs.85).aspx
 func readConsoleInputKey(handle uintptr, inputBuffer []INPUT_RECORD) (int, error) {
+	log.Debugln("console_windows:readConsoleInputKey")
+	log.Debugln("len(inputBuffer)", len(inputBuffer))
+	log.Debugln("handle", handle)
 	var nr WORD
-	if err := getError(readConsoleInputProc.Call(handle, uintptr(unsafe.Pointer(&inputBuffer[0])), uintptr(len(inputBuffer)), uintptr(unsafe.Pointer(&nr)))); err != nil {
+	var err error
+
+	err = getError(readConsoleInputProc.Call(handle, uintptr(unsafe.Pointer(&inputBuffer[0])), uintptr(len(inputBuffer)), uintptr(unsafe.Pointer(&nr))))
+	if err != nil {
+		log.Debugln("console_windows:readConsoleInputKey failed ", err)
 		return 0, err
 	}
+	log.Debugln("console_windows:readConsoleInputKey OK", int(nr), nil, err)
 	return int(nr), nil
 }
 
@@ -849,6 +891,7 @@ func (term *WindowsTerminal) WriteChars(fd uintptr, w io.Writer, p []byte) (n in
 	if len(p) == 0 {
 		return 0, nil
 	}
+	log.Debugln("console_windows:WriteChars", p)
 	return w.Write(p)
 }
 
@@ -986,10 +1029,12 @@ func mapKeystokeToTerminalString(keyEvent *KEY_EVENT_RECORD, escapeSequence []by
 // The function does not return until at least one input record has been read.
 func getAvailableInputEvents(handle uintptr, inputEvents []INPUT_RECORD) (n int, err error) {
 	// TODO(azlinux): Why is there a for loop? Seems to me, that `n` cannot be negative. - tibor
+	log.Debugln("getAvailableInputEvents()")
 	for {
 		// Read number of console events available
 		n, err = readConsoleInputKey(handle, inputEvents)
 		if err != nil || n >= 0 {
+			log.Debugln("getAvailableInputEvents() returning", n, err)
 			return n, err
 		}
 	}
@@ -1001,8 +1046,21 @@ func getTranslatedKeyCodes(inputEvents []INPUT_RECORD, escapeSequence []byte) st
 	var buf bytes.Buffer
 	for i := 0; i < len(inputEvents); i++ {
 		input := inputEvents[i]
+
+		if input.EventType == KEY_EVENT {
+			log.Debugln("getTranslatedKeyCodes iteration ", i)
+			log.Debugln(" - EventType", input.EventType)
+			log.Debugln(" - Control", input.KeyEvent.ControlKeyState)
+			log.Debugln(" - Keydown", input.KeyEvent.KeyDown)
+			log.Debugln(" - Repeat", input.KeyEvent.RepeatCount)
+			log.Debugln(" - UnicodeChar", string(input.KeyEvent.UnicodeChar))
+			log.Debugln(" - VKC", input.KeyEvent.VirtualKeyCode)
+			log.Debugln(" - VSC", input.KeyEvent.VirtualScanCode)
+		}
+
 		if input.EventType == KEY_EVENT && input.KeyEvent.KeyDown != 0 {
 			keyString := mapKeystokeToTerminalString(&input.KeyEvent, escapeSequence)
+			log.Debugln("...WriteString to buf", keyString)
 			buf.WriteString(keyString)
 		}
 	}
@@ -1011,18 +1069,27 @@ func getTranslatedKeyCodes(inputEvents []INPUT_RECORD, escapeSequence []byte) st
 
 // ReadChars reads the characters from the given reader
 func (term *WindowsTerminal) ReadChars(fd uintptr, r io.Reader, p []byte) (n int, err error) {
+	log.Debugln("ReadChars()")
 	for term.inputSize == 0 {
+		log.Debugln("ReadChars() calling getAvailableInputEvents")
 		nr, err := getAvailableInputEvents(fd, term.inputEvents)
 		if nr == 0 && nil != err {
+			log.Debugln("ReadChars() returning error due to getAvailableInputEvents")
 			return n, err
 		}
 		if nr > 0 {
+			log.Debugln("ReadChars() Read something")
 			keyCodes := getTranslatedKeyCodes(term.inputEvents[:nr], term.inputEscapeSequence)
+
+			// JJH 3/30/15. Up to here. Why isn't the copy doing anything?????
+
 			term.inputSize = copy(term.inputBuffer, keyCodes)
 		}
+		log.Debugln("ReadChars() after nr>0 check, out of if")
 	}
 	n = copy(p, term.inputBuffer[:term.inputSize])
 	term.inputSize -= n
+	log.Debugln("ReadChars() retuning", n)
 	return n, nil
 }
 

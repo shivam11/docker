@@ -2,9 +2,11 @@
 package term
 
 import (
+	"fmt"
 	"io"
 	"os"
 
+	log "github.com/Sirupsen/logrus"
 	"github.com/docker/docker/pkg/term/winconsole"
 )
 
@@ -33,6 +35,8 @@ func GetWinsize(fd uintptr) (*Winsize, error) {
 	ws.Width = uint16(info.Window.Right - info.Window.Left + 1)
 	ws.Height = uint16(info.Window.Bottom - info.Window.Top + 1)
 
+	log.Debugln("term_windows GetWinSize: ", ws.Height, ws.Width)
+
 	ws.x = 0 // todo azlinux -- this is the pixel size of the Window, and not currently used by any caller
 	ws.y = 0
 
@@ -42,24 +46,29 @@ func GetWinsize(fd uintptr) (*Winsize, error) {
 // SetWinsize sets the terminal connected to the given file descriptor to a
 // given size.
 func SetWinsize(fd uintptr, ws *Winsize) error {
+	log.Debugln("term_windows SetWinSize()")
 	return nil
 }
 
 // IsTerminal returns true if the given file descriptor is a terminal.
 func IsTerminal(fd uintptr) bool {
 	_, e := winconsole.GetConsoleMode(fd)
+	log.Debugln("term_windows IsTerminal", e == nil)
 	return e == nil
 }
 
 // RestoreTerminal restores the terminal connected to the given file descriptor to a
 // previous state.
 func RestoreTerminal(fd uintptr, state *State) error {
+	log.Debugln("term_windows RestoreTerminal ", state.mode)
 	return winconsole.SetConsoleMode(fd, state.mode)
 }
 
 // SaveState saves the state of the given console
 func SaveState(fd uintptr) (*State, error) {
+	log.Debugln("term_windows SaveState()")
 	mode, e := winconsole.GetConsoleMode(fd)
+	log.Debugln("term_windows SaveState()", mode, e)
 	if e != nil {
 		return nil, e
 	}
@@ -69,6 +78,7 @@ func SaveState(fd uintptr) (*State, error) {
 // DisableEcho disbales the echo for given file descriptor and returns previous state
 // see http://msdn.microsoft.com/en-us/library/windows/desktop/ms683462(v=vs.85).aspx for these flag settings
 func DisableEcho(fd uintptr, state *State) error {
+	log.Debugln("term_windows DisableEcho()")
 	state.mode &^= (winconsole.ENABLE_ECHO_INPUT)
 	state.mode |= (winconsole.ENABLE_PROCESSED_INPUT | winconsole.ENABLE_LINE_INPUT)
 	return winconsole.SetConsoleMode(fd, state.mode)
@@ -78,6 +88,7 @@ func DisableEcho(fd uintptr, state *State) error {
 // mode and returns the previous state of the terminal so that it can be
 // restored.
 func SetRawTerminal(fd uintptr) (*State, error) {
+	log.Debugln("term_windows SetRawTerminal()")
 	oldState, err := MakeRaw(fd)
 	if err != nil {
 		return nil, err
@@ -90,6 +101,7 @@ func SetRawTerminal(fd uintptr) (*State, error) {
 // mode and returns the previous state of the terminal so that it can be
 // restored.
 func MakeRaw(fd uintptr) (*State, error) {
+	log.Debugln("term_windows MakeRaw()")
 	var state *State
 	state, err := SaveState(fd)
 	if err != nil {
@@ -111,6 +123,7 @@ func MakeRaw(fd uintptr) (*State, error) {
 
 // GetFdInfo returns file descriptor and bool indicating whether the file is a terminal
 func GetFdInfo(in interface{}) (uintptr, bool) {
+	log.Debugln("term_windows GetFdInfo()")
 	return winconsole.GetHandleInfo(in)
 }
 
@@ -129,9 +142,13 @@ func StdStreams() (stdIn io.ReadCloser, stdOut, stdErr io.Writer) {
 		shouldEmulateANSI = true
 	}
 
+	log.Debugln("term_windows: shouldEmulateANSI=", shouldEmulateANSI)
+
 	if shouldEmulateANSI {
+		fmt.Println("are emulating ANSI")
 		return winconsole.StdStreams()
 	}
 
+	fmt.Println("are not emulating ANSI")
 	return os.Stdin, os.Stdout, os.Stderr
 }

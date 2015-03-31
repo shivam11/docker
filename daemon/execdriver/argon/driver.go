@@ -6,7 +6,6 @@ package argon
 import (
 	"errors"
 	"fmt"
-	"io"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/docker/docker/daemon/execdriver"
@@ -17,6 +16,14 @@ import (
 const (
 	DriverName = "Windows. 1854"
 	Version    = "30-Mar-2015"
+)
+
+var (
+
+	// For device redirection passed into the shim layer.
+	stdDevices hcsshim.Devices
+
+	inListen, outListen, errListen *npipe.PipeListener
 )
 
 type driver struct {
@@ -112,79 +119,6 @@ func checkSupportedOptions(c *execdriver.Command) error {
 
 }
 
-// This runs as a go function. It waits for the Windows container system
-// to accept our offer of a named pipe for stdin. Once accepted, if we are
-// running "attached" to the container (eg docker run -i), then we spin up
-// a further thread to copy anything from the client into the container.
-//
-// Important design note. This function is run as a go function for a very
-// good reason. The named pipe Accept call is blocking until one of two things
-// happen. Either someone connects to it, or it is forcibly closed.
-//
-// Let's assume that no-one connects to it, the only way otherwise the Run()
-// method would continue is by closing it. However, as that would be the same
-// thread, it can't close it. Hence we run as another thread allowing Run()
-// to close the named pipe.
-func stdinAccept(inListen *npipe.PipeListener, pipeName string, copyfrom io.ReadCloser) {
-
-	// Wait for the pipe to be connected to by the shim
-	log.Debugln("Waiting on ", pipeName)
-	stdinConn, err := inListen.Accept()
-	if err != nil {
-		log.Debugln(pipeName, err)
-		return
-	}
-	log.Debugln("Connected to ", stdinConn.RemoteAddr())
-
-	// Anything that comes from the client stdin should be copied
-	// across to the stdin named pipe of the Windows container.
-	if copyfrom != nil {
-		go func() {
-			defer stdinConn.Close()
-			log.Debugln("Calling io.Copy on stdin")
-			bytes, err := io.Copy(stdinConn, copyfrom)
-			log.Debugln("Finished io.Copy on stdin bytes/err:", bytes, err)
-		}()
-	} else {
-		defer stdinConn.Close()
-	}
-}
-
-// This runs as a go function. It waits for the Windows container system to
-// accept our offer of a named pipe - in fact two of them - one for stdout
-// and one for stderr (we are called twice). Once the named pipe is accepted,
-// if we are running "attached" to the container (eg docker run -i), then we
-// spin up a further thread to copy anything from the containers output channels
-// to the client.
-func stdouterrAccept(outerrListen *npipe.PipeListener, pipeName string, copyto io.Writer) {
-
-	// Wait for the pipe to be connected to by the shim
-	log.Debugln("Waiting on ", pipeName)
-	outerrConn, err := outerrListen.Accept()
-	if err != nil {
-		log.Debugln(pipeName, err)
-		return
-
-	}
-	log.Debugln("Connected to ", outerrConn.RemoteAddr())
-
-	// Anything that comes from the container named pipe stdout/err should be copied
-	// across to the stdout/err of the client
-
-	if copyto != nil {
-		go func() {
-			defer outerrConn.Close()
-			log.Debugln("Calling io.Copy on stdout/err")
-			bytes, err := io.Copy(copyto, outerrConn)
-			log.Debugln("Copied bytes/err/pipe:", bytes, err, outerrConn.RemoteAddr())
-		}()
-	} else {
-		defer outerrConn.Close()
-	}
-
-	// BUGBUG We need to pass this in so we can set it: c.ProcessConfig.Cmd.Stdout = stdoutConn
-}
-
 func (d *driver) Run(c *execdriver.Command, pipes *execdriver.Pipes, startCallback execdriver.StartCallback) (execdriver.ExitStatus, error) {
 
 	log.Debugln("argon::run c.")
@@ -206,9 +140,8 @@ func (d *driver) Run(c *execdriver.Command, pipes *execdriver.Pipes, startCallba
 	log.Debugln(" cmd.path  : ", c.ProcessConfig.Cmd.Path)
 
 	var (
-		// term execdriver.Terminal   Commented out for now.
-		err                            error
-		inListen, outListen, errListen *npipe.PipeListener
+		term execdriver.Terminal
+		err  error
 	)
 
 	// Make sure the client isn't asking for options which aren't supported
@@ -218,13 +151,10 @@ func (d *driver) Run(c *execdriver.Command, pipes *execdriver.Pipes, startCallba
 		return execdriver.ExitStatus{ExitCode: -1}, err
 	}
 
-	// For device redirection passed into the shim layer.
 	stdDevices := hcsshim.Devices{}
 
 	// Connect stdin
 	if pipes.Stdin != nil {
-		log.Debugln("pipes.Stdin: ", pipes.Stdin)
-
 		stdDevices.StdInPipe = `\\.\pipe\docker\` + c.ID + "-stdin"
 
 		// Listen on the named pipe
@@ -240,7 +170,7 @@ func (d *driver) Run(c *execdriver.Command, pipes *execdriver.Pipes, startCallba
 		// the caller (us) closes the listener
 		go stdinAccept(inListen, stdDevices.StdInPipe, pipes.Stdin)
 
-		// TODO There's probably the same c.ProcessConfig.Cmd.Stdin = stdinConn
+		// TODO c.ProcessConfig.Cmd.Stdin = stdinConn
 	}
 
 	// Connect stdout
@@ -265,6 +195,13 @@ func (d *driver) Run(c *execdriver.Command, pipes *execdriver.Pipes, startCallba
 	defer errListen.Close()
 	go stdouterrAccept(errListen, stdDevices.StdErrPipe, pipes.Stderr)
 
+	if c.ProcessConfig.Tty {
+		term, err = NewTtyConsole(&c.ProcessConfig, pipes)
+	} else {
+		term, err = NewStdConsole(&c.ProcessConfig, pipes)
+	}
+	c.ProcessConfig.Terminal = term
+
 	// Temporarily create a dummy container with the ID
 	configuration := `{` + "\n"
 	configuration += ` "SystemType" : "Container",` + "\n"
@@ -273,7 +210,7 @@ func (d *driver) Run(c *execdriver.Command, pipes *execdriver.Pipes, startCallba
 	configuration += ` "IsDummy" : true` + "\n"
 
 	if c.ProcessConfig.Tty == true {
-		configuration += ` "TTY" : true` + "\n"
+		//configuration += ` "TTY" : true` + "\n"
 	}
 
 	configuration += `}` + "\n"
@@ -394,7 +331,7 @@ func (d *driver) Unpause(c *execdriver.Command) error {
 
 func (i *info) IsRunning() bool {
 	var running bool
-	running = true
+	running = true // TODO
 	return running
 }
 

@@ -86,9 +86,14 @@ func main() {
 			flag.Usage()
 			return
 		}
+		l, _ := os.OpenFile(os.Getenv("temp")+"\\dockerdaemon.log", os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0666)
+		log.SetOutput(l)
 		mainDaemon()
 		return
 	}
+
+	l, _ := os.OpenFile(os.Getenv("temp")+"\\dockerclient.log", os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0666)
+	log.SetOutput(l)
 
 	if len(flHosts) > 1 {
 		log.Fatal("Please specify only one -H")
