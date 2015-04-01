@@ -205,16 +205,19 @@ func (d *driver) Run(c *execdriver.Command, pipes *execdriver.Pipes, startCallba
 	// Temporarily create a dummy container with the ID
 	configuration := `{` + "\n"
 	configuration += ` "SystemType" : "Container",` + "\n"
-	configuration += ` "Name" : "test2",` + "\n"
-	configuration += ` "RootDevicePath" : "C:\\Containers\\test",` + "\n"
+	configuration += ` "Name" : "john",` + "\n"
+	//configuration += ` "RootDevicePath" : "C:\\Containers\\test",` + "\n"
 	configuration += ` "IsDummy" : true` + "\n"
 
+	configuration += `}` + "\n"
+
+	var emulateTTY uint32
+
 	if c.ProcessConfig.Tty == true {
-		//configuration += ` "TTY" : true` + "\n"
+		emulateTTY = 0x00000001
 	}
 
-	configuration += `}` + "\n"
-	err = hcsshim.Create(c.ID, configuration)
+	err = hcsshim.CreateComputeSystem(c.ID, configuration)
 	if err != nil {
 		log.Debugln("Failed to create temporary container ", err)
 		return execdriver.ExitStatus{ExitCode: -1}, err
@@ -222,7 +225,7 @@ func (d *driver) Run(c *execdriver.Command, pipes *execdriver.Pipes, startCallba
 
 	// Start the container
 	log.Debugln("Starting container ", c.ID)
-	err = hcsshim.ChangeState(c.ID, hcsshim.Start)
+	err = hcsshim.StartComputeSystem(c.ID)
 	if err != nil {
 		log.Debugln("Failed to start ", err)
 		return execdriver.ExitStatus{ExitCode: -1}, err
@@ -249,7 +252,10 @@ func (d *driver) Run(c *execdriver.Command, pipes *execdriver.Pipes, startCallba
 	log.Debugln("commandLine: ", commandLine)
 
 	// Launch the process
-	pid, err = hcsshim.CreateProcessInComputeSystem(c.ID, commandLine, stdDevices)
+	pid, err = hcsshim.CreateProcessInComputeSystem(c.ID,
+		commandLine,
+		stdDevices,
+		emulateTTY)
 	if err != nil {
 		log.Debugln("CreateProcessInComputeSystem() failed ", err)
 		return execdriver.ExitStatus{ExitCode: -1}, err
@@ -279,8 +285,8 @@ func (d *driver) Run(c *execdriver.Command, pipes *execdriver.Pipes, startCallba
 	log.Debugln("exitcode err", exitCode, err)
 
 	// Stop the container
-	log.Debugln("Stopping container ", c.ID)
-	err = hcsshim.ChangeState(c.ID, hcsshim.Stop)
+	log.Debugln("Shutting down container ", c.ID)
+	err = hcsshim.ShutdownComputeSystem(c.ID)
 	if err != nil {
 		// IMPORTANT: Don't fail if fails to change state. It could already have been stopped through kill()
 		// Otherwise, the docker daemon will hang in job wait()
@@ -313,7 +319,7 @@ func kill(ID string, PID int) error {
 		err = nil
 	}
 
-	err = hcsshim.ChangeState(ID, hcsshim.Stop)
+	err = hcsshim.ShutdownComputeSystem(ID)
 	if err != nil {
 		log.Debugln("Failed to kill ", ID)
 	}

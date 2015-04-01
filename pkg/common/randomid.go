@@ -22,7 +22,7 @@ func TruncateID(id string) string {
 // GenerateRandomID returns an unique id
 func GenerateRandomID() string {
 	for {
-		id := make([]byte, 32)
+		id := make([]byte, 10) // JJH Was 32
 		if _, err := io.ReadFull(rand.Reader, id); err != nil {
 			panic(err) // This shouldn't happen
 		}
