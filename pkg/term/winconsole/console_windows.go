@@ -191,6 +191,15 @@ type (
 		KeyEvent  KEY_EVENT_RECORD
 	}
 
+	WINDOW_BUFFER_SIZE_RECORD struct {
+		Size COORD
+	}
+
+	INPUT_RECORD_WINDOWS_BUFFER_SIZE struct {
+		EventType             WORD
+		WindowBufferSizeEvent WINDOW_BUFFER_SIZE_RECORD
+	}
+
 	CHAR_INFO struct {
 		UnicodeChar WCHAR
 		Attributes  WORD
@@ -1146,6 +1155,17 @@ func getTranslatedKeyCodes(inputEvents []INPUT_RECORD, escapeSequence []byte) st
 			keyString := mapKeystokeToTerminalString(&input.KeyEvent, escapeSequence)
 			buf.WriteString(keyString)
 		}
+
+		if input.EventType == WINDOW_BUFFER_SIZE_EVENT {
+			//			inResize := INPUT_RECORD_WINDOWS_BUFFER_SIZE(input)
+
+			width := input.KeyEvent.KeyDown & 0xFFFF
+			height := input.KeyEvent.KeyDown >> 16
+
+			log.Debugf("JJH Got a resize event %d %d ", width, height)
+
+		}
+
 	}
 	return buf.String()
 }

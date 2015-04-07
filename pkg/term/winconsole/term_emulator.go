@@ -10,21 +10,22 @@ import (
 
 // http://manpages.ubuntu.com/manpages/intrepid/man4/console_codes.4.html
 const (
-	ANSI_ESCAPE_PRIMARY   = 0x1B
-	ANSI_ESCAPE_SECONDARY = 0x5B
-	ANSI_COMMAND_FIRST    = 0x40
-	ANSI_COMMAND_LAST     = 0x7E
-	ANSI_PARAMETER_SEP    = ";"
-	ANSI_CMD_G0           = '('
-	ANSI_CMD_G1           = ')'
-	ANSI_CMD_G2           = '*'
-	ANSI_CMD_G3           = '+'
-	ANSI_CMD_DECPNM       = '>'
-	ANSI_CMD_DECPAM       = '='
-	ANSI_CMD_OSC          = ']'
-	ANSI_CMD_STR_TERM     = '\\'
-	ANSI_BEL              = 0x07
-	KEY_EVENT             = 1
+	ANSI_ESCAPE_PRIMARY      = 0x1B
+	ANSI_ESCAPE_SECONDARY    = 0x5B
+	ANSI_COMMAND_FIRST       = 0x40
+	ANSI_COMMAND_LAST        = 0x7E
+	ANSI_PARAMETER_SEP       = ";"
+	ANSI_CMD_G0              = '('
+	ANSI_CMD_G1              = ')'
+	ANSI_CMD_G2              = '*'
+	ANSI_CMD_G3              = '+'
+	ANSI_CMD_DECPNM          = '>'
+	ANSI_CMD_DECPAM          = '='
+	ANSI_CMD_OSC             = ']'
+	ANSI_CMD_STR_TERM        = '\\'
+	ANSI_BEL                 = 0x07
+	KEY_EVENT                = 1
+	WINDOW_BUFFER_SIZE_EVENT = 0x04
 )
 
 // Interface that implements terminal handling

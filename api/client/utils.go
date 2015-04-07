@@ -15,7 +15,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"time"
+	//	"time"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/docker/docker/api"
@@ -260,19 +260,32 @@ func (cli *DockerCli) monitorTtySize(id string, isExec bool) error {
 	cli.resizeTty(id, isExec)
 
 	if runtime.GOOS == "windows" {
-		go func() {
-			prevW, prevH := cli.getTtySize()
-			for {
-				time.Sleep(time.Millisecond * 250)
-				w, h := cli.getTtySize()
+		log.Debugln("Calling EnableWindowInput")
+		err := term.EnableWindowInput(cli.inFd)
+		log.Debugln("EnableWindowInput returned ", err)
 
-				if prevW != w || prevH != h {
-					cli.resizeTty(id, isExec)
-				}
-				prevW = w
-				prevH = h
-			}
-		}()
+		//go func() {
+		//	for {
+		//		err := term.MonitorTtyResize(cli.inFd)
+		//		if err != nil {
+		//			cli.resizeTty(id, isExec)
+		//		}
+		//	}
+		//}()
+
+		//go func() {
+		//	prevW, prevH := cli.getTtySize()
+		//	for {
+		//		time.Sleep(time.Millisecond * 250)
+		//		w, h := cli.getTtySize()
+
+		//		if prevW != w || prevH != h {
+		//			cli.resizeTty(id, isExec)
+		//		}
+		//		prevW = w
+		//		prevH = h
+		//	}
+		//}()
 	} else {
 		sigchan := make(chan os.Signal, 1)
 		gosignal.Notify(sigchan, signal.SIGWINCH)

@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 
+	log "github.com/Sirupsen/logrus"
 	"github.com/docker/docker/pkg/term/winconsole"
 )
 
@@ -86,6 +87,23 @@ func SetRawTerminal(fd uintptr) (*State, error) {
 	return oldState, err
 }
 
+// EnableWindowInput cause the terminal connected to the given file descriptor
+// to have user interactions that change the size of the console screen buffer
+// reported in the console's input buffer.
+// See https://msdn.microsoft.com/en-us/library/windows/desktop/ms686033(v=vs.85).aspx
+func EnableWindowInput(fd uintptr) error {
+	log.Debugln("JJH Calling EnableWindowsInput")
+
+	var state *State
+	state, err := SaveState(fd)
+	if err != nil {
+		return err
+	}
+
+	state.mode |= winconsole.ENABLE_WINDOW_INPUT
+	return winconsole.SetConsoleMode(fd, state.mode)
+}
+
 // MakeRaw puts the terminal connected to the given file descriptor into raw
 // mode and returns the previous state of the terminal so that it can be
 // restored.
@@ -134,4 +152,8 @@ func StdStreams() (stdIn io.ReadCloser, stdOut, stdErr io.Writer) {
 	}
 
 	return os.Stdin, os.Stdout, os.Stderr
+}
+
+func MonitorTtyResize(fd uintptr) (err error) {
+	return nil
 }
